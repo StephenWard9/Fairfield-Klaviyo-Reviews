@@ -33,8 +33,8 @@ final class FN_Klaviyo_Reviews {
     add_action('wp_ajax_fn_klaviyo_save_rating', [$this, 'ajax_save_rating']);
     add_action('wp_ajax_nopriv_fn_klaviyo_save_rating', [$this, 'ajax_save_rating']);
 
-    // Schema injection - Rank Math uses @graph structure
-    add_filter('rank_math/json_ld', [$this, 'inject_aggregate_rating_schema'], 10, 2);
+    // Schema injection - Output separate JSON-LD block
+    add_action('wp_footer', [$this, 'output_aggregate_rating_schema'], 5);
 
     // Daily cleanup of stale ratings
     add_action('fn_klaviyo_cleanup_stale_ratings', [$this, 'cleanup_stale_ratings']);
@@ -286,16 +286,16 @@ final class FN_Klaviyo_Reviews {
     wp_send_json_success(['saved' => true]);
   }
 
-  /* ===== Rank Math schema injection ===== */
+  /* ===== Output aggregate rating schema ===== */
 
-  public function inject_aggregate_rating_schema($data, $jsonld) {
-    // Get product ID
-    global $post;
-    $product_id = $post ? $post->ID : get_queried_object_id();
-    if (!$product_id) return $data;
+  public function output_aggregate_rating_schema() {
+    if (!function_exists('is_product') || !is_product()) return;
 
-    // Only proceed if @graph exists
-    if (empty($data['@graph']) || !is_array($data['@graph'])) return $data;
+    global $post, $product;
+    if (!$product) $product = wc_get_product($post);
+    if (!$product) return;
+
+    $product_id = $product->get_id();
 
     // Check for manual override first
     $rating_value = get_post_meta($product_id, '_fn_klaviyo_manual_rating_value', true);
@@ -309,7 +309,7 @@ final class FN_Klaviyo_Reviews {
 
       // Don't show stale data (older than 14 days)
       if ($timestamp && (time() - $timestamp) > 14 * DAY_IN_SECONDS) {
-        return $data;
+        return;
       }
     }
 
@@ -317,22 +317,22 @@ final class FN_Klaviyo_Reviews {
     $rating_count = is_numeric($rating_count) ? (int) $rating_count : 0;
 
     // If no valid rating data, return early
-    if ($rating_value <= 0 || $rating_count <= 0) return $data;
+    if ($rating_value <= 0 || $rating_count <= 0) return;
 
-    // Find and inject into Product node in @graph
-    foreach ($data['@graph'] as $i => $node) {
-      if (isset($node['@type']) && $node['@type'] === 'Product') {
-        $data['@graph'][$i]['aggregateRating'] = [
-          '@type'       => 'AggregateRating',
-          'ratingValue' => sprintf('%.1f', $rating_value),
-          'ratingCount' => (string) $rating_count,
-          'reviewCount' => (string) $rating_count,
-        ];
-        break;
-      }
-    }
+    // Output standalone JSON-LD for Product with aggregateRating
+    $schema = [
+      '@context' => 'https://schema.org',
+      '@type' => 'Product',
+      '@id' => get_permalink($product_id) . '#product',
+      'aggregateRating' => [
+        '@type' => 'AggregateRating',
+        'ratingValue' => sprintf('%.1f', $rating_value),
+        'ratingCount' => (string) $rating_count,
+        'reviewCount' => (string) $rating_count,
+      ]
+    ];
 
-    return $data;
+    echo '<script type="application/ld+json">' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
   }
 
   /* ===== Cleanup stale ratings (daily cron) ===== */
