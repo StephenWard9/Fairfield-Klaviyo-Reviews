@@ -323,7 +323,9 @@ final class FN_Klaviyo_Reviews {
     $schema = [
       '@context' => 'https://schema.org',
       '@type' => 'Product',
-      '@id' => get_permalink($product_id) . '#product',
+      'name' => $product->get_name(),
+      'url' => get_permalink($product_id),
+      'sku' => $product->get_sku(),
       'aggregateRating' => [
         '@type' => 'AggregateRating',
         'ratingValue' => sprintf('%.1f', $rating_value),
