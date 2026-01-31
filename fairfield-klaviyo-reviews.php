@@ -294,6 +294,11 @@ final class FN_Klaviyo_Reviews {
     $product_id = get_queried_object_id();
     if (!$product_id) return $data;
 
+    // Debug logging
+    error_log('Klaviyo Schema Filter: Running for product ' . $product_id);
+    error_log('Klaviyo Schema Filter: Data structure has @graph: ' . (isset($data['@graph']) ? 'YES' : 'NO'));
+    error_log('Klaviyo Schema Filter: Data keys: ' . implode(', ', array_keys($data)));
+
     // Check for manual override first (set via WP-CLI or directly in DB)
     $rating_value = get_post_meta($product_id, '_fn_klaviyo_manual_rating_value', true);
     $rating_count = get_post_meta($product_id, '_fn_klaviyo_manual_rating_count', true);
@@ -316,12 +321,22 @@ final class FN_Klaviyo_Reviews {
     $rating_value = is_numeric($rating_value) ? (float) $rating_value : 0;
     $rating_count = is_numeric($rating_count) ? (int) $rating_count : 0;
 
-    if ($rating_value <= 0 || $rating_count <= 0) return $data;
+    error_log('Klaviyo Schema Filter: Rating data - Value: ' . $rating_value . ', Count: ' . $rating_count);
+
+    if ($rating_value <= 0 || $rating_count <= 0) {
+      error_log('Klaviyo Schema Filter: SKIPPED - Invalid rating data');
+      return $data;
+    }
 
     // Inject into Rank Math's Product schema
     if (!empty($data['@graph']) && is_array($data['@graph'])) {
+      error_log('Klaviyo Schema Filter: Found @graph with ' . count($data['@graph']) . ' nodes');
       foreach ($data['@graph'] as $i => $node) {
+        if (isset($node['@type'])) {
+          error_log('Klaviyo Schema Filter: Node ' . $i . ' type: ' . $node['@type']);
+        }
         if (isset($node['@type']) && $node['@type'] === 'Product') {
+          error_log('Klaviyo Schema Filter: INJECTING aggregateRating into Product node');
           $data['@graph'][$i]['aggregateRating'] = [
             '@type'       => 'AggregateRating',
             'ratingValue' => sprintf('%.1f', $rating_value),
@@ -331,6 +346,8 @@ final class FN_Klaviyo_Reviews {
           break;
         }
       }
+    } else {
+      error_log('Klaviyo Schema Filter: NO @graph found - schema structure different than expected');
     }
 
     return $data;
