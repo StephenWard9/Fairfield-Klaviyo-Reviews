@@ -324,6 +324,16 @@ final class FN_Klaviyo_Reviews {
       'reviewCount' => (string) $rating_count,
     ];
 
+    // Add merchant return policy (adjust values to match your actual policy)
+    $entity['hasMerchantReturnPolicy'] = [
+      '@type' => 'MerchantReturnPolicy',
+      'applicableCountry' => 'AU',
+      'returnPolicyCategory' => 'https://schema.org/MerchantReturnFiniteReturnWindow',
+      'merchantReturnDays' => 30,
+      'returnMethod' => 'https://schema.org/ReturnByMail',
+      'returnFees' => 'https://schema.org/FreeReturn'
+    ];
+
     return $entity;
   }
 
