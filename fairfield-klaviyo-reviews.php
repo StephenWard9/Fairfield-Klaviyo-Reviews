@@ -156,11 +156,10 @@ final class FN_Klaviyo_Reviews {
     wp_add_inline_script('fn-kl-reviews-inline', $js);
 
     // JS: Capture and save ratings to product meta for Google schema
-    if (function_exists('is_product') && is_product()) {
-      $ajax_url = admin_url('admin-ajax.php');
-      $nonce = wp_create_nonce('fn_klaviyo_rating');
+    $ajax_url = admin_url('admin-ajax.php');
+    $nonce = wp_create_nonce('fn_klaviyo_rating');
 
-      $capture_js = "(function(){
+    $capture_js = "(function(){
         var AJAX_URL = '" . esc_js($ajax_url) . "';
         var NONCE = '" . esc_js($nonce) . "';
 
@@ -225,8 +224,7 @@ final class FN_Klaviyo_Reviews {
         if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
       })();";
 
-      wp_add_inline_script('fn-kl-reviews-inline', $capture_js);
-    }
+    wp_add_inline_script('fn-kl-reviews-inline', $capture_js);
   }
 
   /* ===== AJAX handler: Save captured ratings ===== */
