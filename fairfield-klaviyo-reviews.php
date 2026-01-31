@@ -36,6 +36,9 @@ final class FN_Klaviyo_Reviews {
     // Schema injection - Use Rank Math's Product-specific filter
     add_filter('rank_math/snippet/rich_snippet_product_entity', [$this, 'inject_into_product_entity'], 10);
 
+    // Add return policy schema to returns page
+    add_action('wp_footer', [$this, 'output_return_policy_schema']);
+
     // Daily cleanup of stale ratings
     add_action('fn_klaviyo_cleanup_stale_ratings', [$this, 'cleanup_stale_ratings']);
     if (!wp_next_scheduled('fn_klaviyo_cleanup_stale_ratings')) {
@@ -335,6 +338,27 @@ final class FN_Klaviyo_Reviews {
     ];
 
     return $entity;
+  }
+
+  /* ===== Output return policy schema on returns page ===== */
+
+  public function output_return_policy_schema() {
+    // Only run on the returns page (post ID 9)
+    if (!is_page(9)) return;
+
+    $schema = [
+      '@context' => 'https://schema.org',
+      '@type' => 'MerchantReturnPolicy',
+      'applicableCountry' => 'AU',
+      'returnPolicyCategory' => 'https://schema.org/MerchantReturnFiniteReturnWindow',
+      'merchantReturnDays' => 30,
+      'returnMethod' => 'https://schema.org/ReturnByMail',
+      'returnFees' => 'https://schema.org/FreeReturn',
+      'name' => 'Fairfield Nutrition Return Policy',
+      'url' => 'https://shop.fairfieldnutrition.com.au/refund_returns/'
+    ];
+
+    echo '<script type="application/ld+json">' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
   }
 
   /* ===== Cleanup stale ratings (daily cron) ===== */
