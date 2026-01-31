@@ -33,8 +33,8 @@ final class FN_Klaviyo_Reviews {
     add_action('wp_ajax_fn_klaviyo_save_rating', [$this, 'ajax_save_rating']);
     add_action('wp_ajax_nopriv_fn_klaviyo_save_rating', [$this, 'ajax_save_rating']);
 
-    // Schema injection - Output separate JSON-LD block
-    add_action('wp_footer', [$this, 'output_aggregate_rating_schema'], 5);
+    // Schema injection - Use Rank Math's Product-specific filter
+    add_filter('rank_math/snippet/rich_snippet_product_entity', [$this, 'inject_into_product_entity'], 10);
 
     // Daily cleanup of stale ratings
     add_action('fn_klaviyo_cleanup_stale_ratings', [$this, 'cleanup_stale_ratings']);
@@ -286,16 +286,13 @@ final class FN_Klaviyo_Reviews {
     wp_send_json_success(['saved' => true]);
   }
 
-  /* ===== Output aggregate rating schema ===== */
+  /* ===== Inject into Rank Math Product entity ===== */
 
-  public function output_aggregate_rating_schema() {
-    if (!function_exists('is_product') || !is_product()) return;
+  public function inject_into_product_entity($entity) {
+    global $post;
+    if (!$post) return $entity;
 
-    global $post, $product;
-    if (!$product) $product = wc_get_product($post);
-    if (!$product) return;
-
-    $product_id = $product->get_id();
+    $product_id = $post->ID;
 
     // Check for manual override first
     $rating_value = get_post_meta($product_id, '_fn_klaviyo_manual_rating_value', true);
@@ -309,7 +306,7 @@ final class FN_Klaviyo_Reviews {
 
       // Don't show stale data (older than 14 days)
       if ($timestamp && (time() - $timestamp) > 14 * DAY_IN_SECONDS) {
-        return;
+        return $entity;
       }
     }
 
@@ -317,24 +314,17 @@ final class FN_Klaviyo_Reviews {
     $rating_count = is_numeric($rating_count) ? (int) $rating_count : 0;
 
     // If no valid rating data, return early
-    if ($rating_value <= 0 || $rating_count <= 0) return;
+    if ($rating_value <= 0 || $rating_count <= 0) return $entity;
 
-    // Output standalone JSON-LD for Product with aggregateRating
-    $schema = [
-      '@context' => 'https://schema.org',
-      '@type' => 'Product',
-      'name' => $product->get_name(),
-      'url' => get_permalink($product_id),
-      'sku' => $product->get_sku(),
-      'aggregateRating' => [
-        '@type' => 'AggregateRating',
-        'ratingValue' => sprintf('%.1f', $rating_value),
-        'ratingCount' => (string) $rating_count,
-        'reviewCount' => (string) $rating_count,
-      ]
+    // Inject aggregateRating into the Product entity
+    $entity['aggregateRating'] = [
+      '@type' => 'AggregateRating',
+      'ratingValue' => sprintf('%.1f', $rating_value),
+      'ratingCount' => (string) $rating_count,
+      'reviewCount' => (string) $rating_count,
     ];
 
-    echo '<script type="application/ld+json">' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
+    return $entity;
   }
 
   /* ===== Cleanup stale ratings (daily cron) ===== */
