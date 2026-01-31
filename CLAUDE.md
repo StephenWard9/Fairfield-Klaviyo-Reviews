@@ -9,7 +9,7 @@ This is a WordPress plugin that integrates Klaviyo Reviews widgets into WooComme
 **Plugin Details:**
 - Name: Fairfield Klaviyo Reviews
 - Main file: `fairfield-klaviyo-reviews.php`
-- Version: 0.1.2
+- Version: 0.2.0
 
 ## Architecture
 
@@ -77,3 +77,62 @@ The archive star placement hooks are specifically chosen to work with Flatsome's
 The plugin supports disabling archive stars via:
 - Option: `fn_klaviyo_archive_stars_enabled` (default: true)
 - Filter: `fn_klaviyo_archive_stars_enabled` (allows programmatic control)
+
+## SEO / Google Schema Integration
+
+### Auto-Capture Rating Data for JSON-LD
+
+The plugin automatically captures star ratings from Klaviyo widgets and injects them into Rank Math's Product schema as `aggregateRating`. This makes products eligible for Google star ratings in search results.
+
+**How it works:**
+1. Client-side JS parses the Klaviyo widget's `aria-label` (e.g., "5 stars, 4 ratings")
+2. Sends data via AJAX to save as product meta (`_fn_klaviyo_rating_value`, `_fn_klaviyo_rating_count`, `_fn_klaviyo_rating_timestamp`)
+3. Server-side filter (`rank_math/json_ld`) injects `aggregateRating` into Product schema
+
+**Key features:**
+- **Rate limiting**: 1 update per product per IP per minute (prevents spam)
+- **Stale data detection**: Ratings older than 14 days are excluded from schema
+- **Manual override**: Manual ratings (set via WP-CLI) always take precedence over auto-captured
+- **Daily cleanup**: Cron job deletes auto-captured ratings older than 30 days (forces re-capture)
+
+### Manual Rating Override
+
+For hero products (Akkermansia, etc.), you can set ratings manually that never expire:
+
+```bash
+# Set manual rating (bypasses auto-capture)
+wp klaviyo-rating set 13052 5.0 4
+
+# View current rating
+wp klaviyo-rating get 13052
+
+# Clear manual rating (reverts to auto-capture)
+wp klaviyo-rating clear 13052
+```
+
+**Manual vs Auto-captured:**
+- Manual ratings (`_fn_klaviyo_manual_rating_value`) never expire or get cleaned up
+- Auto-captured ratings expire after 14 days (schema) or 30 days (cleanup cron)
+- Manual ratings always override auto-captured when both exist
+
+### Product Meta Fields
+
+- `_fn_klaviyo_rating_value` - Auto-captured star rating (0.0-5.0)
+- `_fn_klaviyo_rating_count` - Auto-captured review count
+- `_fn_klaviyo_rating_timestamp` - Unix timestamp of last auto-capture
+- `_fn_klaviyo_manual_rating_value` - Manual override rating (takes precedence)
+- `_fn_klaviyo_manual_rating_count` - Manual override count
+
+### WP-CLI Commands
+
+Available commands under `wp klaviyo-rating`:
+- `set <product_id> <rating_value> <rating_count>` - Set manual rating
+- `get <product_id>` - Show current rating (indicates if manual or auto)
+- `clear <product_id>` - Remove manual override
+
+### Testing Schema
+
+After ratings are captured:
+1. Check product meta in WP admin for the product ID
+2. View source on PDP and search for `aggregateRating` in Rank Math JSON-LD
+3. Test with [Google Rich Results Test](https://search.google.com/test/rich-results)
