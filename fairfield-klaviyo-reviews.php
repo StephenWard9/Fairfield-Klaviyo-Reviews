@@ -33,8 +33,9 @@ final class FN_Klaviyo_Reviews {
     add_action('wp_ajax_fn_klaviyo_save_rating', [$this, 'ajax_save_rating']);
     add_action('wp_ajax_nopriv_fn_klaviyo_save_rating', [$this, 'ajax_save_rating']);
 
-    // Rank Math schema injection
+    // Schema injection - multiple approaches for compatibility
     add_filter('rank_math/json_ld', [$this, 'inject_aggregate_rating_schema'], 99, 2);
+    add_filter('woocommerce_structured_data_product', [$this, 'inject_woocommerce_schema'], 99, 2);
 
     // Daily cleanup of stale ratings
     add_action('fn_klaviyo_cleanup_stale_ratings', [$this, 'cleanup_stale_ratings']);
@@ -289,20 +290,14 @@ final class FN_Klaviyo_Reviews {
   /* ===== Rank Math schema injection ===== */
 
   public function inject_aggregate_rating_schema($data, $jsonld) {
-    if (!function_exists('is_product') || !is_product()) return $data;
-
-    $product_id = get_queried_object_id();
+    // Don't check is_product() - let it run and check if we have rating data instead
+    global $post;
+    $product_id = $post ? $post->ID : get_queried_object_id();
     if (!$product_id) return $data;
-
-    // Debug logging
-    error_log('Klaviyo Schema Filter: Running for product ' . $product_id);
-    error_log('Klaviyo Schema Filter: Data structure has @graph: ' . (isset($data['@graph']) ? 'YES' : 'NO'));
-    error_log('Klaviyo Schema Filter: Data keys: ' . implode(', ', array_keys($data)));
 
     // Check for manual override first (set via WP-CLI or directly in DB)
     $rating_value = get_post_meta($product_id, '_fn_klaviyo_manual_rating_value', true);
     $rating_count = get_post_meta($product_id, '_fn_klaviyo_manual_rating_count', true);
-    $is_manual = false;
 
     if (!$rating_value || !$rating_count) {
       // Fall back to auto-captured values
@@ -314,43 +309,86 @@ final class FN_Klaviyo_Reviews {
       if ($timestamp && (time() - $timestamp) > 14 * DAY_IN_SECONDS) {
         return $data;
       }
-    } else {
-      $is_manual = true;
     }
 
     $rating_value = is_numeric($rating_value) ? (float) $rating_value : 0;
     $rating_count = is_numeric($rating_count) ? (int) $rating_count : 0;
 
-    error_log('Klaviyo Schema Filter: Rating data - Value: ' . $rating_value . ', Count: ' . $rating_count);
+    // If no valid rating data, return early
+    if ($rating_value <= 0 || $rating_count <= 0) return $data;
 
-    if ($rating_value <= 0 || $rating_count <= 0) {
-      error_log('Klaviyo Schema Filter: SKIPPED - Invalid rating data');
+    // Build the aggregateRating object
+    $aggregate_rating = [
+      '@type'       => 'AggregateRating',
+      'ratingValue' => sprintf('%.1f', $rating_value),
+      'ratingCount' => (string) $rating_count,
+      'reviewCount' => (string) $rating_count,
+    ];
+
+    // Handle @graph structure (Rank Math default)
+    if (!empty($data['@graph']) && is_array($data['@graph'])) {
+      foreach ($data['@graph'] as $i => $node) {
+        if (isset($node['@type']) && $node['@type'] === 'Product') {
+          $data['@graph'][$i]['aggregateRating'] = $aggregate_rating;
+          return $data;
+        }
+      }
+    }
+
+    // Handle direct Product object (alternative structure)
+    if (isset($data['@type']) && $data['@type'] === 'Product') {
+      $data['aggregateRating'] = $aggregate_rating;
       return $data;
     }
 
-    // Inject into Rank Math's Product schema
-    if (!empty($data['@graph']) && is_array($data['@graph'])) {
-      error_log('Klaviyo Schema Filter: Found @graph with ' . count($data['@graph']) . ' nodes');
-      foreach ($data['@graph'] as $i => $node) {
-        if (isset($node['@type'])) {
-          error_log('Klaviyo Schema Filter: Node ' . $i . ' type: ' . $node['@type']);
-        }
-        if (isset($node['@type']) && $node['@type'] === 'Product') {
-          error_log('Klaviyo Schema Filter: INJECTING aggregateRating into Product node');
-          $data['@graph'][$i]['aggregateRating'] = [
-            '@type'       => 'AggregateRating',
-            'ratingValue' => sprintf('%.1f', $rating_value),
-            'ratingCount' => (string) $rating_count,
-            'reviewCount' => (string) $rating_count,
-          ];
-          break;
-        }
-      }
-    } else {
-      error_log('Klaviyo Schema Filter: NO @graph found - schema structure different than expected');
+    // Handle WooCommerce Product schema hook (fallback)
+    if ($jsonld instanceof \RankMath\Schema\JsonLD) {
+      add_filter('woocommerce_structured_data_product', function($markup) use ($aggregate_rating) {
+        $markup['aggregateRating'] = $aggregate_rating;
+        return $markup;
+      }, 99);
     }
 
     return $data;
+  }
+
+  /* ===== WooCommerce schema injection (backup method) ===== */
+
+  public function inject_woocommerce_schema($markup, $product) {
+    if (!$product) return $markup;
+
+    $product_id = $product->get_id();
+    if (!$product_id) return $markup;
+
+    // Check for manual override first
+    $rating_value = get_post_meta($product_id, '_fn_klaviyo_manual_rating_value', true);
+    $rating_count = get_post_meta($product_id, '_fn_klaviyo_manual_rating_count', true);
+
+    if (!$rating_value || !$rating_count) {
+      // Fall back to auto-captured values
+      $rating_value = get_post_meta($product_id, '_fn_klaviyo_rating_value', true);
+      $rating_count = get_post_meta($product_id, '_fn_klaviyo_rating_count', true);
+      $timestamp = get_post_meta($product_id, '_fn_klaviyo_rating_timestamp', true);
+
+      // Don't show stale data
+      if ($timestamp && (time() - $timestamp) > 14 * DAY_IN_SECONDS) {
+        return $markup;
+      }
+    }
+
+    $rating_value = is_numeric($rating_value) ? (float) $rating_value : 0;
+    $rating_count = is_numeric($rating_count) ? (int) $rating_count : 0;
+
+    if ($rating_value <= 0 || $rating_count <= 0) return $markup;
+
+    $markup['aggregateRating'] = [
+      '@type'       => 'AggregateRating',
+      'ratingValue' => sprintf('%.1f', $rating_value),
+      'ratingCount' => (string) $rating_count,
+      'reviewCount' => (string) $rating_count,
+    ];
+
+    return $markup;
   }
 
   /* ===== Cleanup stale ratings (daily cron) ===== */
