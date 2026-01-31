@@ -25,7 +25,7 @@ final class FN_Returns_Policy {
       '@type' => 'MerchantReturnPolicy',
       'applicableCountry' => 'AU',
       'returnPolicyCategory' => 'https://schema.org/MerchantReturnFiniteReturnWindow',
-      'merchantReturnDays' => 30,
+      'merchantReturnDays' => (int) 30,  // Force integer type
       'returnMethod' => 'https://schema.org/ReturnByMail',
       'returnFees' => 'https://schema.org/FreeReturn'
     ];
@@ -45,14 +45,14 @@ final class FN_Returns_Policy {
       '@type' => 'MerchantReturnPolicy',
       'applicableCountry' => 'AU',
       'returnPolicyCategory' => 'https://schema.org/MerchantReturnFiniteReturnWindow',
-      'merchantReturnDays' => 30,
+      'merchantReturnDays' => (int) 30,  // Force integer type
       'returnMethod' => 'https://schema.org/ReturnByMail',
       'returnFees' => 'https://schema.org/FreeReturn',
       'name' => 'Fairfield Nutrition Return Policy',
       'url' => 'https://shop.fairfieldnutrition.com.au/refund_returns/'
     ];
 
-    echo '<script type="application/ld+json">' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
+    echo '<script type="application/ld+json">' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK) . '</script>' . "\n";
   }
 }
 
