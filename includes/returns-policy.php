@@ -36,8 +36,9 @@ final class FN_Returns_Policy {
   /* ===== Output return policy schema on returns page ===== */
 
   public function output_return_policy_schema() {
-    // Only run on the returns page (post ID 9)
-    if (!is_page(9)) return;
+    // Only run on the returns page (by slug)
+    // Change 'refund_returns' to match your actual page slug if different
+    if (!is_page('refund_returns')) return;
 
     $schema = [
       '@context' => 'https://schema.org',
